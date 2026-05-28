@@ -9,7 +9,17 @@ from .audio import AudioManager
 
 EXCLUDED_ROOTS = {".git", "external", "models", "exports", "logs", "recordings", "dist", "build", ".venv"}
 EXCLUDED_PARTS = {"__pycache__", ".pytest_cache"}
-INCLUDED_ROOTS = {"AGENTS.md", "README.md", "pyproject.toml", ".gitignore", "docs", "scripts", "src", "tests"}
+INCLUDED_ROOTS = {
+    "AGENTS.md",
+    "README.md",
+    "pyproject.toml",
+    ".gitignore",
+    "run_offline_note_taker.ps1",
+    "docs",
+    "scripts",
+    "src",
+    "tests",
+}
 
 
 def create_portable_package(output_dir: str | Path = "dist", repo_root: str | Path | None = None) -> Path:
@@ -33,9 +43,9 @@ def create_portable_package(output_dir: str | Path = "dist", repo_root: str | Pa
                     "Offline Note Taker portable beta",
                     "",
                     "1. Install Python 3.12.",
-                    "2. From this folder, run: python -m pip install -e \".[gui,dev]\"",
-                    "3. Run: python -m offline_meeting_notes doctor",
-                    "4. Run: python -m offline_meeting_notes",
+                    "2. Run: powershell -ExecutionPolicy Bypass -File .\\run_offline_note_taker.ps1",
+                    "3. Or run manually: python -m pip install -e \".[gui,dev]\"",
+                    "4. Then: python -m offline_meeting_notes doctor",
                     "",
                     "Qualcomm SDK/model assets are intentionally not bundled.",
                 ]

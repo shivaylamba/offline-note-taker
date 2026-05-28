@@ -93,6 +93,7 @@ class MeetingNotes:
     backend: str
     elapsed_ms: int = 0
     fallback_reason: str = ""
+    validation_messages: list[str] = field(default_factory=list)
 
     def to_markdown(self) -> str:
         decisions = self.decisions or ["not mentioned"]
@@ -162,6 +163,7 @@ class MeetingNotes:
             "backend": self.backend,
             "elapsed_ms": self.elapsed_ms,
             "fallback_reason": self.fallback_reason,
+            "validation_messages": list(self.validation_messages),
         }
 
 

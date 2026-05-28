@@ -1,0 +1,9 @@
+{
+  "name": "noisy_asr",
+  "transcript": "So Simon, you are responsible for delivering the app by tomorrow. Jack your DevOps and back end lead, to ensure that everything works and it does not break.",
+  "expected_actions": [
+    {"owner": "Simon", "task_contains": "delivering the app", "deadline": "tomorrow"},
+    {"owner": "Jack", "task_contains": "ensure that everything works", "deadline": "not mentioned"}
+  ],
+  "expected_decision_count": 0
+}

@@ -11,6 +11,7 @@ from .diagnostics import DiagnosticsLogger
 from .exporters import ExportAgent
 from .models import AudioMetadata, MeetingSession
 from .pipeline import MeetingPipeline, PipelineSettings, PreparedTranscript
+from .quality import proof_report_text
 from .qa import MeetingQAAgent
 from .runtime_doctor import run_runtime_doctor
 from .session_store import SessionStore, SessionSummary
@@ -221,6 +222,7 @@ class MainWindow(QMainWindow):
         self.recording_started_at = 0.0
         self.chat_blocks: list[str] = []
         self.reviewed_markdown = ""
+        self.last_diagnostics_path: Path | None = None
 
         self.setWindowTitle("Offline Note Taker")
         self.resize(1220, 820)
@@ -343,8 +345,10 @@ class MainWindow(QMainWindow):
         self.notes_text = self._browser("Structured meeting notes will appear after local LLM extraction.")
         self.runtime_text = self._browser(qualcomm_runtime_status().message())
         self.exports_text = self._browser("Exports and diagnostics will appear here.")
+        self.performance_text = self._browser("Performance and grounding proof will appear after a run.")
         self.details.addTab(self.transcript_text, "Transcript")
         self.details.addTab(self.notes_text, "Notes")
+        self.details.addTab(self.performance_text, "Performance")
         self.details.addTab(self.runtime_text, "Runtime")
         self.details.addTab(self.exports_text, "Exports")
         split.addWidget(self.details)
@@ -392,6 +396,8 @@ class MainWindow(QMainWindow):
         self.cancel_button.clicked.connect(self._cancel_notes)
         self.review_button = QPushButton("Review Notes")
         self.review_button.clicked.connect(self._review_notes)
+        self.copy_proof_button = QPushButton("Copy Proof")
+        self.copy_proof_button.clicked.connect(self._copy_proof_report)
         self.export_button = QPushButton("Export")
         self.export_button.setIcon(style.standardIcon(QStyle.StandardPixmap.SP_DialogSaveButton))
         self.export_button.clicked.connect(self._export_all)
@@ -411,6 +417,7 @@ class MainWindow(QMainWindow):
             self.runtime_button,
             self.cancel_button,
             self.review_button,
+            self.copy_proof_button,
             self.export_button,
             self.device_combo,
             self.timer_label,
@@ -480,10 +487,12 @@ class MainWindow(QMainWindow):
         self.current_session_dir = None
         self.selected_audio = None
         self.reviewed_markdown = ""
+        self.last_diagnostics_path = None
         self.chat_blocks = []
         self.chat.clear()
         self.transcript_text.clear()
         self.notes_text.clear()
+        self.performance_text.setPlainText("Performance and grounding proof will appear after a run.")
         self.exports_text.setPlainText("Exports and diagnostics will appear here.")
         self._set_badges("Whisper: not run", "Notes: not run", "Fallback: none")
         self._append("Assistant", "Ready for a new local meeting. Record, upload, or try the sample.")
@@ -663,6 +672,7 @@ class MainWindow(QMainWindow):
             self.current_session_dir = self.session_store.save(session)
             self.reviewed_markdown = ""
             log_path = self.diagnostics_logger.write(session)
+            self.last_diagnostics_path = log_path
             self._set_badges(
                 f"Whisper: {session.transcription.backend}",
                 f"Notes: {session.notes.backend}",
@@ -671,6 +681,7 @@ class MainWindow(QMainWindow):
             self.status_label.setText(f"Ready: {session.audio.path.name}")
             self._render_transcript(session.transcription.segments)
             self._render_notes(session)
+            self._render_performance(session, log_path)
             self.exports_text.setPlainText(f"Session: {self.current_session_dir}\nDiagnostics: {log_path}")
             self._append("Assistant", "Structured notes are ready. You can ask questions, review evidence, or export.")
             self._refresh_history()
@@ -697,6 +708,8 @@ class MainWindow(QMainWindow):
         self.selected_audio = session.audio
         reviewed = self.current_session_dir / "reviewed_meeting_notes.md" if self.current_session_dir else None
         self.reviewed_markdown = reviewed.read_text(encoding="utf-8") if reviewed and reviewed.exists() else ""
+        diagnostics = self.current_session_dir / "diagnostics.json" if self.current_session_dir else None
+        self.last_diagnostics_path = diagnostics if diagnostics and diagnostics.exists() else None
         self._set_badges(
             f"Whisper: {session.transcription.backend}",
             f"Notes: {session.notes.backend}",
@@ -705,6 +718,7 @@ class MainWindow(QMainWindow):
         self.status_label.setText(f"Opened local session: {session.audio.path.name}")
         self._render_transcript(session.transcription.segments)
         self._render_notes(session)
+        self._render_performance(session, self.last_diagnostics_path)
         self._append("Assistant", "Opened this local meeting. Ask a question or export the notes.")
         self._sync_actions()
 
@@ -740,8 +754,10 @@ class MainWindow(QMainWindow):
                     encoding="utf-8",
                 )
         log_path = self.diagnostics_logger.write(self.session, exported)
+        self.last_diagnostics_path = log_path
         lines = "\n".join(f"- {kind}: {path}" for kind, path in exported.items())
         self.exports_text.setPlainText(f"Exported files:\n{lines}\n- diagnostics: {log_path}")
+        self._render_performance(self.session, log_path)
         self.details.setCurrentWidget(self.exports_text)
         self._append("Assistant", f"Exported files:\n{lines}")
         self._set_status(f"Exported to {target}")
@@ -772,6 +788,27 @@ class MainWindow(QMainWindow):
     def _render_notes(self, session: MeetingSession) -> None:
         self.notes_text.setMarkdown(session.notes.to_markdown())
         self.details.setCurrentWidget(self.notes_text)
+
+    def _render_performance(self, session: MeetingSession, diagnostics_path: Path | None = None) -> None:
+        report = proof_report_text(
+            session,
+            diagnostics_path=diagnostics_path or "",
+            session_path=self.current_session_dir or "",
+            detect_npu=True,
+        )
+        self.performance_text.setPlainText(report)
+
+    def _copy_proof_report(self) -> None:
+        if not self.session:
+            return
+        report = proof_report_text(
+            self.session,
+            diagnostics_path=self.last_diagnostics_path or "",
+            session_path=self.current_session_dir or "",
+            detect_npu=True,
+        )
+        QApplication.clipboard().setText(report)
+        self._append("Assistant", "Copied the local proof report to the clipboard.")
 
     def _anchor_clicked(self, url: QUrl) -> None:
         if url.scheme() != "cite" or not self.session:
@@ -827,6 +864,7 @@ class MainWindow(QMainWindow):
         self.cancel_button.setEnabled(is_busy and self.notes_stream_active and not self.cancel_requested)
         self.export_button.setEnabled(has_session and not is_busy)
         self.review_button.setEnabled(has_session and not is_busy)
+        self.copy_proof_button.setEnabled(has_session and not is_busy)
         self.question_input.setEnabled(has_session and not is_busy)
         self.ask_button.setEnabled(has_session and not is_busy)
         self.delete_button.setEnabled(self.current_session_dir is not None and not is_busy)

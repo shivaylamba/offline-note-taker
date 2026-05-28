@@ -1,0 +1,8 @@
+{
+  "name": "decisions_vs_suggestions",
+  "transcript": "We considered using the GPU path, but the team decided to use the Snapdragon NPU path for the demo. Carol should compare startup latency by Wednesday.",
+  "expected_actions": [
+    {"owner": "Carol", "task_contains": "compare startup latency", "deadline": "Wednesday"}
+  ],
+  "expected_decision_count": 1
+}

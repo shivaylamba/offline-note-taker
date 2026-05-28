@@ -1,0 +1,9 @@
+{
+  "name": "long_transcript",
+  "transcript": "We reviewed customer feedback and discussed privacy positioning. Priya will update the README demo section by Friday. The architecture discussion covered local settings, session storage, and diagnostics. Omar needs to run the eval benchmark before the recruiter screen. The team confirmed that Qualcomm assets remain external and are not bundled.",
+  "expected_actions": [
+    {"owner": "Priya", "task_contains": "update the README demo section", "deadline": "Friday"},
+    {"owner": "Omar", "task_contains": "run the eval benchmark", "deadline": "not mentioned"}
+  ],
+  "expected_decision_count": 1
+}

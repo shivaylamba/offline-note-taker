@@ -4,6 +4,52 @@ A Windows desktop app for private, offline meeting notes on Snapdragon X / Qualc
 
 The app records or imports meeting audio, transcribes it locally with Qualcomm AI Hub Whisper Windows, generates structured notes with Qwen3-4B through Qualcomm Genie / QAIRT, supports transcript-grounded Q&A, and exports the results without sending audio or text to the cloud.
 
+## Demo In 3 Minutes
+
+```powershell
+python -m pip install -e ".[gui,dev]"
+python -m offline_meeting_notes doctor
+python -m offline_meeting_notes eval
+python -m offline_meeting_notes
+```
+
+Demo flow:
+
+1. Click `Runtime Check` and show local Whisper, QAIRT, Genie, Qwen bundle, and NPU status.
+2. Record or upload a short meeting.
+3. Show transcript-first behavior: Whisper transcript appears before notes.
+4. Show Qwen/Genie notes, action items, owners, deadlines, and timestamp evidence.
+5. Open the `Performance` tab and copy the local proof report.
+6. Ask a question, export Markdown/JSON, and reopen the meeting from local history.
+
+Screenshots: add final demo screenshots under `docs/assets/` before sharing publicly. Recommended shots: main workspace, Runtime Check, Performance proof, and exported notes.
+
+## Why This Is Impressive
+
+- Runs the core voice-to-notes workflow locally instead of outsourcing audio/transcript data to a cloud API.
+- Uses the practical Qualcomm AI Hub Whisper Windows path for Snapdragon NPU transcription.
+- Uses Qwen3-4B through Qualcomm Genie / QAIRT for local meeting intelligence.
+- Prioritizes trustworthy AI behavior: transcript-first UX, schema validation, fallback extraction, citation grounding, diagnostics, and evals.
+- Includes a product-grade beta shell: setup wizard, session history, exports, performance proof, packaging, and CI.
+
+## Benchmark Snapshot
+
+Generated with:
+
+```powershell
+python -m offline_meeting_notes eval
+```
+
+| Fixture | Expected Actions | Extracted | Owner Acc. | Deadline Acc. | Citation Coverage | Unsupported Decisions |
+|---|---:|---:|---:|---:|---:|---:|
+| ambiguous_owner | 2 | 2 | 100% | 100% | 100% | 0 |
+| clear_owners_deadlines | 2 | 2 | 100% | 100% | 100% | 0 |
+| decisions_vs_suggestions | 1 | 1 | 100% | 100% | 100% | 0 |
+| long_transcript | 2 | 2 | 100% | 100% | 100% | 0 |
+| no_action_items | 0 | 0 | 100% | 100% | 100% | 0 |
+| noisy_asr | 2 | 2 | 100% | 100% | 100% | 0 |
+| **Total** | 9 | 9 | 100% | 100% | 100% | 0 |
+
 ## What It Does
 
 - Records microphone audio locally.
@@ -67,6 +113,9 @@ Working locally:
 - Portable zip packaging command.
 - Local diagnostics and quality metrics.
 - Reviewed-notes Markdown editing before export.
+- Performance/local-proof panel with copyable runtime report.
+- `offline-note-taker eval` benchmark command.
+- GitHub Actions CI.
 - Unit test coverage for chunking, export formats, Q&A, and summary extraction behavior.
 
 Large runtime assets are intentionally ignored by Git:
@@ -167,6 +216,13 @@ Run a local CLI smoke test:
 
 ```powershell
 offline-note-taker smoke
+```
+
+Run deterministic quality evals:
+
+```powershell
+offline-note-taker eval
+offline-note-taker eval --json
 ```
 
 Process one audio file from the command line:
@@ -327,6 +383,20 @@ exports\
 
 The app sidebar can reopen, search, and delete local sessions.
 
+## Performance / Local Proof
+
+After each run, the `Performance` tab shows:
+
+- Whisper backend, latency, and real-time factor.
+- Notes backend and Qwen elapsed time.
+- fallback status, if any.
+- NPU detection result.
+- diagnostics path and local session path.
+- citation coverage and unsupported-decision count.
+- grounding status for action items.
+
+Use `Copy Proof` to copy a concise report for debugging, README notes, or a live demo.
+
 ## Exports
 
 The export action writes:
@@ -359,9 +429,11 @@ Current coverage includes:
 - Qwen JSON parsing and validation
 - fallback behavior
 - runtime doctor JSON output
+- eval CLI text and JSON output
 - settings persistence
 - session store create/open/search/delete
 - portable package exclusions
+- local proof report formatting
 - notes quality metrics
 
 ## Privacy

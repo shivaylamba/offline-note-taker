@@ -171,8 +171,12 @@ class FallbackMeetingNotesRunner(MeetingNotesRunner):
                     continue
                 task = self._clean_task(match.groupdict().get("task") or "not mentioned")
                 deadline = (match.groupdict().get("deadline") or "not mentioned").strip(" .")
+                extra_items = self._chained_action_items(deadline, text, evidence)
+                if extra_items:
+                    deadline = re.split(r"\s+and\s+(?:follow[- ]?up|prepare|send|update|run|compare|validate)\b", deadline, maxsplit=1, flags=re.IGNORECASE)[0].strip(" .")
                 if task:
                     items.append(ActionItem(owner=owner, task=task, deadline=deadline, evidence=f"{evidence}: {text}"))
+                    items.extend(extra_items)
                     matched_specific_action = True
                 break
             if not matched_specific_action:
@@ -193,6 +197,26 @@ class FallbackMeetingNotesRunner(MeetingNotesRunner):
                     )
                 )
         return items
+
+    def _chained_action_items(self, deadline: str, text: str, evidence: str) -> list[ActionItem]:
+        chained = re.search(
+            r"\s+and\s+(?P<task>(?:follow[- ]?up|prepare|send|update|run|compare|validate)\b.*)$",
+            deadline,
+            flags=re.IGNORECASE,
+        )
+        if not chained:
+            return []
+        task = self._clean_task(chained.group("task"))
+        if not task:
+            return []
+        return [
+            ActionItem(
+                owner="not mentioned",
+                task=task,
+                deadline="not mentioned",
+                evidence=f"{evidence}: {text}",
+            )
+        ]
 
     def _clean_task(self, task: str) -> str:
         task = re.sub(r"^(?:to\s+|then\s+|go ahead and\s+)+", "", task.strip(" ."), flags=re.IGNORECASE)
@@ -605,13 +629,19 @@ class Qwen3GenieMeetingNotesRunner(MeetingNotesRunner):
             fallback.fallback_reason = "Qwen returned output that could not be parsed as structured notes JSON."
             return fallback
 
+        validation_messages: list[str] = []
         decisions = self._string_list(payload, "decisions", fallback.decisions)
         if not fallback.decisions:
+            if decisions:
+                validation_messages.append(
+                    f"Removed {len(decisions)} unsupported decision(s) because the transcript lacked decision language."
+                )
             decisions = []
-        action_items = self._validated_action_items(
-            self._action_items_from_payload(payload, fallback.action_items),
-            fallback,
-        )
+        raw_action_items = self._action_items_from_payload(payload, fallback.action_items)
+        action_items = self._validated_action_items(raw_action_items, fallback)
+        removed_actions = max(0, len(raw_action_items) - len(action_items))
+        if removed_actions:
+            validation_messages.append(f"Removed {removed_actions} unsupported action item(s) from Qwen output.")
         notes = MeetingNotes(
             summary=self._string_field(payload, "summary", fallback.summary),
             important_points=self._string_list(payload, "important_points", fallback.important_points),
@@ -622,6 +652,7 @@ class Qwen3GenieMeetingNotesRunner(MeetingNotesRunner):
             follow_up_email=self._string_field(payload, "follow_up_email", fallback.follow_up_email),
             transcript_reference=self._string_list(payload, "transcript_reference", fallback.transcript_reference),
             backend=self.backend_name,
+            validation_messages=validation_messages,
         )
         if not notes.summary or notes.summary == "not mentioned":
             notes.summary = fallback.summary

@@ -190,6 +190,7 @@ class SessionStore:
             backend=str(notes_raw.get("backend", "")),
             elapsed_ms=int(notes_raw.get("elapsed_ms", 0)),
             fallback_reason=str(notes_raw.get("fallback_reason", "")),
+            validation_messages=[str(item) for item in notes_raw.get("validation_messages", [])],
         )
         return MeetingSession(audio=audio, transcription=transcription, chunks=chunks, notes=notes)
 

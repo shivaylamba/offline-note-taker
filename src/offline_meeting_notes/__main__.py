@@ -7,6 +7,7 @@ from pathlib import Path
 
 from .audio import AudioManager
 from .diagnostics import DiagnosticsLogger
+from .evaluation import run_eval
 from .exporters import ExportAgent
 from .packaging import create_portable_package
 from .pipeline import MeetingPipeline, PipelineSettings
@@ -47,6 +48,10 @@ def main(argv: list[str] | None = None) -> int:
     package_parser = subparsers.add_parser("package", help="Create a portable beta zip without Qualcomm assets.")
     package_parser.add_argument("--output", default="dist", help="Output directory for the portable zip.")
 
+    eval_parser = subparsers.add_parser("eval", help="Run local quality evals over golden transcript fixtures.")
+    eval_parser.add_argument("--fixtures", default=str(Path("tests") / "fixtures" / "eval"), help="Fixture directory.")
+    eval_parser.add_argument("--json", action="store_true", help="Print machine-readable JSON.")
+
     args = parser.parse_args(argv)
 
     if args.command == "doctor":
@@ -59,6 +64,8 @@ def main(argv: list[str] | None = None) -> int:
         return process_audio_file(args.audio, args.export_dir, args.session)
     if args.command == "package":
         return package_app(args.output)
+    if args.command == "eval":
+        return eval_app(args.fixtures, args.json)
     if args.cli_smoke:
         return cli_smoke(args.export_dir)
     if args.audio_file:
@@ -123,6 +130,12 @@ def process_audio_file(audio_file: str, export_dir: str, session_target: str = "
 def package_app(output: str) -> int:
     package_path = create_portable_package(output)
     print(f"portable_package: {package_path}")
+    return 0
+
+
+def eval_app(fixtures: str, as_json: bool = False) -> int:
+    report = run_eval(fixtures)
+    print(json.dumps(report.to_dict(), indent=2) if as_json else report.to_text())
     return 0
 
 

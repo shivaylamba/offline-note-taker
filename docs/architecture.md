@@ -21,6 +21,8 @@ flowchart LR
 - Meeting sessions are local folders with audio, transcript JSON, notes JSON, diagnostics, and optional exports.
 - Qwen output must parse as structured JSON and pass transcript-grounding checks before becoming final notes.
 - Deterministic fallback notes keep the app useful when the local LLM times out, returns malformed JSON, or is cancelled.
+- `offline-note-taker eval` runs golden transcript fixtures to measure action extraction, owner/deadline accuracy, citation coverage, and unsupported decisions.
+- The app `Performance` tab produces a copyable local proof report after each run.
 - No cloud calls or telemetry are required for normal recording, transcription, summarization, Q&A, or export.
 
 ## Why This Matters

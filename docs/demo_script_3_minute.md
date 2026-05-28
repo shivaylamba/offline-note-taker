@@ -8,6 +8,7 @@ Title: Offline Meeting Notes on Snapdragon X using Whisper and Qwen
 2. Click `Runtime Check`.
 3. Show pass checks for Whisper Windows, Whisper ONNX files, QAIRT, Genie, Qwen3 bundle files, and Hexagon NPU.
 4. Point out the `Offline: network not required` badge.
+5. Run `offline-note-taker eval` beforehand and keep the benchmark table ready.
 
 ## 0:30-1:20 Capture And Transcript
 
@@ -24,8 +25,10 @@ Title: Offline Meeting Notes on Snapdragon X using Whisper and Qwen
 2. Watch NPU utilization in Task Manager if available.
 3. Show validated final notes.
 4. Click or point to timestamp citations in the transcript panel.
-5. Ask: `What are the action items?`
-6. Ask: `Who owns the launch task?`
+5. Open `Performance` and show Whisper latency, real-time factor, Qwen elapsed time, citation coverage, and NPU status.
+6. Click `Copy Proof`.
+7. Ask: `What are the action items?`
+8. Ask: `Who owns the launch task?`
 
 ## 2:20-3:00 Export And Local Library
 

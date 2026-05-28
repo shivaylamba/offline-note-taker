@@ -1,0 +1,9 @@
+{
+  "name": "ambiguous_owner",
+  "transcript": "The main takeaway is to prepare the demo script by Thursday and follow up with the design team.",
+  "expected_actions": [
+    {"owner": "not mentioned", "task_contains": "prepare the demo script", "deadline": "Thursday"},
+    {"owner": "not mentioned", "task_contains": "follow up with the design team", "deadline": "not mentioned"}
+  ],
+  "expected_decision_count": 0
+}

@@ -8,6 +8,7 @@ def test_portable_package_excludes_large_runtime_dirs(tmp_path) -> None:  # type
     root.mkdir()
     (root / "README.md").write_text("readme", encoding="utf-8")
     (root / "pyproject.toml").write_text("[project]\nname='x'", encoding="utf-8")
+    (root / "run_offline_note_taker.ps1").write_text("python -m offline_meeting_notes", encoding="utf-8")
     (root / "src").mkdir()
     (root / "src" / "app.py").write_text("print('ok')", encoding="utf-8")
     for excluded in ("external", "models", "logs", "recordings", "exports"):
@@ -21,5 +22,6 @@ def test_portable_package_excludes_large_runtime_dirs(tmp_path) -> None:  # type
         names = archive.namelist()
 
     assert "README.md" in names
+    assert "run_offline_note_taker.ps1" in names
     assert "sample_data/sample_meeting.wav" in names
     assert not any(name.startswith(("external/", "models/", "logs/", "recordings/", "exports/")) for name in names)

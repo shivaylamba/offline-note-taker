@@ -1,0 +1,9 @@
+{
+  "name": "clear_owners_deadlines",
+  "transcript": "Alice will send the launch notes by Friday. Bob will validate the backend by Monday. The team agreed to use the Snapdragon NPU demo path.",
+  "expected_actions": [
+    {"owner": "Alice", "task_contains": "send the launch notes", "deadline": "Friday"},
+    {"owner": "Bob", "task_contains": "validate the backend", "deadline": "Monday"}
+  ],
+  "expected_decision_count": 1
+}

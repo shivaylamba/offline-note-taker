@@ -23,6 +23,7 @@ class RunDiagnostics:
     qwen_backend: str
     qwen_elapsed_ms: int
     fallback_reason: str
+    validation_messages: list[str] = field(default_factory=list)
     quality: dict[str, Any] = field(default_factory=dict)
     export_paths: dict[str, str] = field(default_factory=dict)
 
@@ -62,6 +63,7 @@ class DiagnosticsLogger:
             qwen_backend=session.notes.backend,
             qwen_elapsed_ms=session.notes.elapsed_ms,
             fallback_reason=session.notes.fallback_reason,
+            validation_messages=list(session.notes.validation_messages),
             quality=quality,
             export_paths=exports,
         )

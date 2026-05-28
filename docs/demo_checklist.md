@@ -18,6 +18,7 @@ Run:
 ```powershell
 offline-note-taker doctor
 offline-note-taker doctor --json
+offline-note-taker eval
 ```
 
 Expected:
@@ -74,8 +75,9 @@ Expected:
    ```
 
 12. Click `Review Notes`, make a tiny Markdown edit, and save.
-13. Export notes and verify Markdown, TXT, JSON, SRT, and VTT files.
-14. Reopen the meeting from the sidebar.
+13. Open `Performance` and click `Copy Proof`.
+14. Export notes and verify Markdown, TXT, JSON, SRT, and VTT files.
+15. Reopen the meeting from the sidebar.
 
 ## Expected Fallback Behavior
 
