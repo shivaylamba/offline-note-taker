@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from .models import MeetingSession
+from .quality import evaluate_notes
 
 
 @dataclass(slots=True)
@@ -22,6 +23,7 @@ class RunDiagnostics:
     qwen_backend: str
     qwen_elapsed_ms: int
     fallback_reason: str
+    quality: dict[str, Any] = field(default_factory=dict)
     export_paths: dict[str, str] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
@@ -47,6 +49,7 @@ class DiagnosticsLogger:
         created = datetime.now(timezone.utc)
         run_id = created.strftime("%Y%m%dT%H%M%S%fZ")
         exports = {kind: str(path) for kind, path in (export_paths or {}).items()}
+        quality = evaluate_notes(session).to_dict()
         return RunDiagnostics(
             run_id=run_id,
             created_at=created.isoformat(),
@@ -59,5 +62,6 @@ class DiagnosticsLogger:
             qwen_backend=session.notes.backend,
             qwen_elapsed_ms=session.notes.elapsed_ms,
             fallback_reason=session.notes.fallback_reason,
+            quality=quality,
             export_paths=exports,
         )

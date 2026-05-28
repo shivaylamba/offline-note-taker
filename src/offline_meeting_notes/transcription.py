@@ -14,6 +14,7 @@ import numpy as np
 from .models import AudioMetadata, TranscriptSegment, TranscriptionResult
 from .timecode import seconds_to_timestamp
 from .aihub_runtime import find_whisper_app_dir, find_whisper_model_paths, find_whisper_python
+from .local_process import LocalProcessRunner
 
 
 class WhisperRunnerError(RuntimeError):
@@ -230,22 +231,20 @@ class CommandWhisperRunner(WhisperRunner):
     def transcribe(self, audio: AudioMetadata) -> TranscriptionResult:
         command = self.command_template.format(audio=str(audio.path))
         started = time.perf_counter()
-        completed = subprocess.run(
+        result = LocalProcessRunner().run(
             command,
+            name="whisper-command",
             shell=True,
-            capture_output=True,
-            text=True,
             timeout=self.timeout_seconds,
-            check=False,
         )
         latency_ms = int((time.perf_counter() - started) * 1000)
-        if completed.returncode != 0:
-            error = (completed.stderr or completed.stdout).strip()
-            raise WhisperRunnerError(error or f"Whisper command failed: {command}")
+        if result.returncode != 0:
+            error = (result.stderr or result.stdout).strip()
+            raise WhisperRunnerError(error or f"Whisper command failed. See log: {result.log_path}")
 
-        segments = self._parse_segments(completed.stdout)
+        segments = self._parse_segments(result.stdout)
         if not segments:
-            text = self._extract_text(completed.stdout)
+            text = self._extract_text(result.stdout)
             if not text:
                 raise WhisperRunnerError("Whisper command completed but did not return transcript text.")
             duration = max(audio.duration_seconds, 1.0)
@@ -340,20 +339,18 @@ class QualcommWhisperWindowsRunner(WhisperRunner):
             command.extend(["--encoder-path", str(self.config.encoder_path)])
             command.extend(["--decoder-path", str(self.config.decoder_path)])
         started = time.perf_counter()
-        completed = subprocess.run(
+        result = LocalProcessRunner().run(
             command,
+            name="whisper-windows",
             cwd=str(app_dir),
-            capture_output=True,
-            text=True,
             timeout=self.config.timeout_seconds,
-            check=False,
         )
         latency_ms = int((time.perf_counter() - started) * 1000)
-        if completed.returncode != 0:
-            error = (completed.stderr or completed.stdout).strip()
-            raise WhisperRunnerError(error or "Whisper Windows runner failed.")
+        if result.returncode != 0:
+            error = (result.stderr or result.stdout).strip()
+            raise WhisperRunnerError(error or f"Whisper Windows runner failed. See log: {result.log_path}")
 
-        text = self._extract_transcript(completed.stdout)
+        text = self._extract_transcript(result.stdout)
         if not text:
             raise WhisperRunnerError("Whisper Windows runner completed but no transcript text was found.")
 

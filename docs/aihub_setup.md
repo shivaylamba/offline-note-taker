@@ -77,6 +77,14 @@ offline-note-taker doctor
 
 The doctor prints pass/warn/fail checks for Whisper, QAIRT, Genie, Qwen bundle files, ADSP runtime path, and NPU device detection.
 
+To save detected paths for future app launches:
+
+```powershell
+offline-note-taker setup
+```
+
+The GUI `Setup` button provides the same path configuration flow and writes settings to `%LOCALAPPDATA%\OfflineNoteTaker\settings.json`.
+
 This repo includes a helper that checks for the expected QAIRT 2.45 install and launches the installer if you have already downloaded it:
 
 ```powershell

@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Callable
 
 from .aihub_runtime import find_qairt_home, find_qwen3_genie_config, qairt_version_is_compatible
+from .local_process import LocalProcessRunner, terminate_process_tree
 from .models import ActionItem, MeetingNotes, TranscriptChunk, TranscriptSegment
 
 DECISION_TERMS = ("decided", "decision", "agreed", "approved", "confirmed", "go with")
@@ -283,19 +284,17 @@ class QwenHybridMeetingNotesRunner(MeetingNotesRunner):
             "--temperature",
             "0",
         ]
-        completed = subprocess.run(
+        result = LocalProcessRunner().run(
             command,
+            name="qwen-hybrid-qnn",
             cwd=str(self.script_path.parent),
-            capture_output=True,
-            text=True,
             timeout=self.timeout_seconds,
-            check=False,
         )
-        if completed.returncode != 0:
-            error = (completed.stderr or completed.stdout).strip()
+        if result.returncode != 0:
+            error = (result.stderr or result.stdout).strip()
             raise RuntimeError(error or "Qwen hybrid QNN notes runner failed.")
 
-        qwen_text = self._extract_assistant(completed.stdout)
+        qwen_text = self._extract_assistant(result.stdout)
         if not qwen_text:
             raise RuntimeError("Qwen hybrid QNN runner completed but did not return notes.")
 
@@ -427,6 +426,7 @@ class Qwen3GenieMeetingNotesRunner(MeetingNotesRunner):
         on_text: Callable[[str], None] | None,
         cancel_event: threading.Event | None,
     ) -> tuple[str, int, str]:
+        process_log = LocalProcessRunner().log_path("qwen3-genie")
         process = subprocess.Popen(
             command,
             cwd=str(self.genie_config.parent),
@@ -473,7 +473,7 @@ class Qwen3GenieMeetingNotesRunner(MeetingNotesRunner):
                     completed_json = True
                     if on_text:
                         on_text("Structured notes are ready. Rendering final notes now.")
-                    process.terminate()
+                    terminate_process_tree(process)
                     break
                 now = time.monotonic()
                 if on_text and now - last_progress >= 10:
@@ -488,13 +488,13 @@ class Qwen3GenieMeetingNotesRunner(MeetingNotesRunner):
                 cancelled = True
                 if on_text:
                     on_text("Cancelling notes generation and using local transcript-grounded fallback notes.")
-                process.terminate()
+                terminate_process_tree(process)
                 break
             if now - started >= self.timeout_seconds:
                 timed_out = True
                 if on_text:
                     on_text("Qwen is taking too long; using the local transcript-grounded fallback notes.")
-                process.terminate()
+                terminate_process_tree(process)
                 break
             if on_text and now - last_progress >= 10:
                 elapsed = int(now - started)
@@ -505,17 +505,33 @@ class Qwen3GenieMeetingNotesRunner(MeetingNotesRunner):
             try:
                 process.wait(timeout=5)
             except subprocess.TimeoutExpired:
-                process.kill()
+                terminate_process_tree(process)
                 process.wait(timeout=5)
             returncode = 0
         else:
             returncode = process.wait(timeout=5)
         stdout = "".join(stdout_parts)
+        stop_reason = "cancelled" if cancelled else "timeout" if timed_out else "complete" if completed_json else ""
+        process_log.write_text(
+            "\n".join(
+                [
+                    "name: qwen3-genie",
+                    f"cwd: {self.genie_config.parent}",
+                    f"returncode: {returncode}",
+                    f"stop_reason: {stop_reason}",
+                    f"command: {command}",
+                    "",
+                    "[stdout]",
+                    stdout,
+                ]
+            ),
+            encoding="utf-8",
+            errors="replace",
+        )
         if on_text and not completed_json and not timed_out and not cancelled:
             final_text = self._extract_output(stdout)
             if final_text:
                 on_text("Received local LLM output. Rendering final notes now.")
-        stop_reason = "cancelled" if cancelled else "timeout" if timed_out else "complete" if completed_json else ""
         return stdout, returncode, stop_reason
 
     def _has_complete_json(self, stdout: str) -> bool:
@@ -592,11 +608,15 @@ class Qwen3GenieMeetingNotesRunner(MeetingNotesRunner):
         decisions = self._string_list(payload, "decisions", fallback.decisions)
         if not fallback.decisions:
             decisions = []
+        action_items = self._validated_action_items(
+            self._action_items_from_payload(payload, fallback.action_items),
+            fallback,
+        )
         notes = MeetingNotes(
             summary=self._string_field(payload, "summary", fallback.summary),
             important_points=self._string_list(payload, "important_points", fallback.important_points),
             decisions=decisions,
-            action_items=self._action_items_from_payload(payload, fallback.action_items),
+            action_items=action_items,
             open_questions=self._string_list(payload, "open_questions", fallback.open_questions),
             risks_blockers=self._string_list(payload, "risks_blockers", fallback.risks_blockers),
             follow_up_email=self._string_field(payload, "follow_up_email", fallback.follow_up_email),
@@ -699,6 +719,32 @@ class Qwen3GenieMeetingNotesRunner(MeetingNotesRunner):
                     evidence = "not mentioned"
                 items.append(ActionItem(owner=owner, task=task, deadline=deadline, evidence=evidence))
         return items
+
+    def _validated_action_items(self, items: list[ActionItem], fallback: MeetingNotes) -> list[ActionItem]:
+        if not items:
+            return items
+        fallback_text = " ".join(
+            [fallback.summary, *fallback.important_points, *[item.evidence for item in fallback.action_items]]
+        ).lower()
+        if not fallback_text.strip() or fallback_text.replace("not mentioned", "").strip() == "":
+            return items
+        validated = []
+        for item in items:
+            task_terms = [
+                term
+                for term in re.findall(r"[a-zA-Z0-9]+", item.task.lower())
+                if len(term) > 3 and term not in {"mentioned", "responsible"}
+            ]
+            owner_supported = item.owner.lower() == "not mentioned" or item.owner.lower() in fallback_text
+            task_supported = not task_terms or any(term in fallback_text for term in task_terms[:4])
+            evidence_supported = (
+                item.evidence.lower() == "not mentioned"
+                or re.search(r"\d\d:\d\d:\d\d\.\d{3}-\d\d:\d\d:\d\d\.\d{3}", item.evidence)
+                or any(term in item.evidence.lower() for term in task_terms[:3])
+            )
+            if owner_supported and task_supported and evidence_supported:
+                validated.append(item)
+        return validated
 
     def _is_placeholder(self, value: str) -> bool:
         return value.strip().lower() in {

@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 import tempfile
 import wave
+from dataclasses import dataclass
 from pathlib import Path
 
 from .models import AudioMetadata
@@ -13,6 +14,12 @@ DEFAULT_SAMPLE_RATE = 16000
 
 class AudioError(RuntimeError):
     """Raised when local audio capture or import fails."""
+
+
+@dataclass(slots=True)
+class AudioInputDevice:
+    id: str
+    name: str
 
 
 class AudioManager:
@@ -78,12 +85,34 @@ class WavRecorder:
         self._stream = None
         self._frames: list[bytes] = []
         self._target_path: Path | None = None
+        self._paused = False
+        self._level = 0
 
     @property
     def is_recording(self) -> bool:
         return self._stream is not None
 
-    def start(self, target_path: str | os.PathLike[str] | None = None) -> Path:
+    @property
+    def is_paused(self) -> bool:
+        return self._paused
+
+    @property
+    def level(self) -> int:
+        return self._level
+
+    def input_devices(self) -> list[AudioInputDevice]:
+        try:
+            import sounddevice as sd
+        except ImportError as exc:
+            raise AudioError('Microphone device listing needs sounddevice. Run: python -m pip install -e ".[gui]"') from exc
+        devices = sd.query_devices()
+        results = []
+        for index, device in enumerate(devices):
+            if int(device.get("max_input_channels", 0)) > 0:
+                results.append(AudioInputDevice(id=str(index), name=str(device.get("name", f"Input {index}"))))
+        return results
+
+    def start(self, target_path: str | os.PathLike[str] | None = None, device_id: str | None = None) -> Path:
         if self.is_recording:
             raise AudioError("Recording is already active.")
 
@@ -106,15 +135,23 @@ class WavRecorder:
 
         self._target_path = Path(target_path or self._default_recording_path()).resolve()
         self._frames = []
+        self._paused = False
+        self._level = 0
 
         def callback(indata, _frames, _time, status):  # type: ignore[no-untyped-def]
             if status:
                 return
+            if self._paused:
+                self._level = 0
+                return
             pcm = np.clip(indata[:, 0], -1.0, 1.0)
+            self._level = min(100, int(float(np.max(np.abs(pcm))) * 100))
             self._frames.append((pcm * 32767).astype(np.int16).tobytes())
 
         try:
+            device = int(device_id) if device_id not in {None, ""} else None
             self._stream = sd.InputStream(
+                device=device,
                 channels=1,
                 samplerate=self.sample_rate,
                 dtype="float32",
@@ -128,6 +165,17 @@ class WavRecorder:
                 "close other apps using the microphone, or use Upload Audio."
             ) from exc
         return self._target_path
+
+    def pause(self) -> None:
+        if not self.is_recording:
+            raise AudioError("No active recording to pause.")
+        self._paused = True
+        self._level = 0
+
+    def resume(self) -> None:
+        if not self.is_recording:
+            raise AudioError("No active recording to resume.")
+        self._paused = False
 
     def stop(self) -> AudioMetadata:
         if not self.is_recording or self._target_path is None:
@@ -148,6 +196,8 @@ class WavRecorder:
         metadata = AudioManager().import_audio(self._target_path)
         self._target_path = None
         self._frames = []
+        self._paused = False
+        self._level = 0
         return metadata
 
     def _default_recording_path(self) -> Path:

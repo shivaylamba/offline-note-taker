@@ -17,6 +17,7 @@ Run:
 
 ```powershell
 offline-note-taker doctor
+offline-note-taker doctor --json
 ```
 
 Expected:
@@ -32,6 +33,8 @@ Expected:
 
 If doctor fails, do not start the live demo until the missing item is fixed.
 
+If paths are missing in the GUI, click `Setup`, browse to the local Qualcomm paths, save, and rerun `Runtime Check`.
+
 ## Sample Flow
 
 Run:
@@ -45,6 +48,7 @@ Expected:
 - Exports are created under `exports/`.
 - A diagnostics JSON file is created under `logs/`.
 - No Qualcomm runtime is required for this sample fallback path.
+- The session appears in the left meeting-history sidebar.
 
 ## Recording Flow
 
@@ -55,19 +59,23 @@ Expected:
    ```
 
 2. Click `Runtime Check`.
-3. Click `Record`.
-4. Speak for 30-60 seconds.
-5. Click `Stop`.
-6. Confirm transcript appears before notes.
-7. Watch Task Manager NPU utilization during Whisper/Qwen.
-8. Confirm final notes include summary, important points, decisions, action items, owners, deadlines, evidence, and backend.
-9. Ask a Q&A question such as:
+3. Select the microphone from the input dropdown.
+4. Click `Record`.
+5. Confirm the recording timer and input level meter move.
+6. Speak for 30-60 seconds.
+7. Click `Stop`.
+8. Confirm transcript appears before notes.
+9. Watch Task Manager NPU utilization during Whisper/Qwen.
+10. Confirm final notes include summary, important points, decisions, action items, owners, deadlines, evidence, and backend.
+11. Ask a Q&A question such as:
 
    ```text
    What are the action items and owners?
    ```
 
-10. Export notes and verify Markdown, TXT, JSON, SRT, and VTT files.
+12. Click `Review Notes`, make a tiny Markdown edit, and save.
+13. Export notes and verify Markdown, TXT, JSON, SRT, and VTT files.
+14. Reopen the meeting from the sidebar.
 
 ## Expected Fallback Behavior
 

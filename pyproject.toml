@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "offline-meeting-notes"
-version = "0.1.0"
-description = "Offline Windows meeting notes MVP shell with local transcription and summarization adapters."
+version = "0.2.0"
+description = "Offline Windows meeting notes beta with local Qualcomm transcription, Genie notes, setup, sessions, and exports."
 readme = "README.md"
 requires-python = ">=3.12"
 authors = [

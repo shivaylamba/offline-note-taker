@@ -1,0 +1,1 @@
+Alice will send the launch notes by Friday. Bob will validate the backend by Monday. The team agreed to use the Snapdragon NPU demo path.

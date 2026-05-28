@@ -46,12 +46,15 @@ ExecuTorch is kept in the project guidance as a future PyTorch-native runtime pa
 
 ## Current Status
 
-This is a runnable MVP, not a packaged installer.
+This is a runnable demo beta, not a signed MSIX installer.
 
 Working locally:
 
-- Python Qt desktop UI.
+- ChatGPT-style Python Qt desktop workspace.
+- Local meeting history under `%LOCALAPPDATA%\OfflineNoteTaker\sessions`.
+- First-run setup dialog with path selection and runtime checks.
 - Audio recording.
+- Microphone input selector, recording timer, pause/resume, and input level meter.
 - Audio import validation.
 - Qualcomm Whisper Windows runner hook.
 - Qwen3-4B Genie runner hook.
@@ -61,6 +64,9 @@ Working locally:
 - Timeout fallback if Qwen takes too long.
 - Q&A over generated action items and transcript evidence.
 - Export writers.
+- Portable zip packaging command.
+- Local diagnostics and quality metrics.
+- Reviewed-notes Markdown editing before export.
 - Unit test coverage for chunking, export formats, Q&A, and summary extraction behavior.
 
 Large runtime assets are intentionally ignored by Git:
@@ -134,6 +140,7 @@ Recommended demo-beta flow:
 
 ```powershell
 offline-note-taker doctor
+offline-note-taker doctor --json
 offline-note-taker smoke
 offline-note-taker
 ```
@@ -165,7 +172,19 @@ offline-note-taker smoke
 Process one audio file from the command line:
 
 ```powershell
-offline-note-taker process --audio "C:\path\to\meeting.wav" --export-dir exports
+offline-note-taker process --audio "C:\path\to\meeting.wav" --export-dir exports --session demo-meeting
+```
+
+Save detected runtime paths for the app UI:
+
+```powershell
+offline-note-taker setup
+```
+
+Create a portable beta zip without Qualcomm SDK/model assets:
+
+```powershell
+offline-note-taker package --output dist
 ```
 
 ## Qualcomm Runtime Setup
@@ -283,7 +302,30 @@ The doctor validates:
 - `ADSP_LIBRARY_PATH`
 - NPU device availability when Windows exposes it
 
-Run logs are stored locally under `logs/` and are ignored by Git. Logs include audio duration, Whisper backend/latency, Qwen backend/latency, fallback reason, and export paths. No telemetry is sent anywhere.
+Persistent app settings are stored locally at `%LOCALAPPDATA%\OfflineNoteTaker\settings.json`.
+
+Run logs are stored locally under `%LOCALAPPDATA%\OfflineNoteTaker\logs` and repo-local `logs/` during CLI smoke runs. Logs include audio duration, Whisper backend/latency, Qwen backend/latency, fallback reason, quality metrics, and export paths. No telemetry is sent anywhere.
+
+## Local Meeting Library
+
+Each processed meeting is saved under:
+
+```text
+%LOCALAPPDATA%\OfflineNoteTaker\sessions\<session_id>\
+```
+
+Session folders contain:
+
+```text
+audio.wav or audio.<source-format>
+session.json
+transcript.json
+notes.json
+diagnostics.json
+exports\
+```
+
+The app sidebar can reopen, search, and delete local sessions.
 
 ## Exports
 
@@ -298,6 +340,8 @@ meeting_summary.json
 ```
 
 Exports are written locally to the folder selected in the app.
+
+Use `Review Notes` to edit the final Markdown before export. The reviewed Markdown is saved beside the local session and used for `meeting_notes.md` exports.
 
 ## Test
 
@@ -314,6 +358,11 @@ Current coverage includes:
 - action item extraction
 - Qwen JSON parsing and validation
 - fallback behavior
+- runtime doctor JSON output
+- settings persistence
+- session store create/open/search/delete
+- portable package exclusions
+- notes quality metrics
 
 ## Privacy
 
@@ -349,6 +398,11 @@ If Qwen does not run:
 - Confirm the Qwen3-4B Genie bundle matches QAIRT 2.45.x.
 
 For live demo preparation, use [docs/demo_checklist.md](docs/demo_checklist.md).
+
+For the architecture and demo story, see:
+
+- [docs/architecture.md](docs/architecture.md)
+- [docs/demo_script_3_minute.md](docs/demo_script_3_minute.md)
 
 ## License
 

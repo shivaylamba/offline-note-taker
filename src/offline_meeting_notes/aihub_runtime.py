@@ -4,6 +4,8 @@ import os
 from dataclasses import dataclass
 from pathlib import Path
 
+from .settings import load_settings
+
 
 DEFAULT_QAIRT_HOME = Path(r"C:\Qualcomm\AIStack\QAIRT\2.45.0.260326")
 FALLBACK_QAIRT_HOME = Path(r"C:\Users\Admin\Downloads\v2.41.0.251128\qairt\2.41.0.251128")
@@ -32,7 +34,8 @@ class QualcommRuntimeStatus:
 
 
 def find_whisper_app_dir() -> Path | None:
-    configured = os.environ.get("OFFLINE_NOTES_WHISPER_APP_DIR", "").strip()
+    settings = load_settings()
+    configured = os.environ.get("OFFLINE_NOTES_WHISPER_APP_DIR", "").strip() or settings.whisper_app_dir.strip()
     candidates = []
     if configured:
         candidates.append(Path(configured))
@@ -50,8 +53,9 @@ def find_whisper_app_dir() -> Path | None:
 
 
 def find_whisper_model_paths(app_dir: Path | None = None) -> tuple[Path | None, Path | None]:
-    encoder_configured = os.environ.get("OFFLINE_NOTES_WHISPER_ENCODER_PATH", "").strip()
-    decoder_configured = os.environ.get("OFFLINE_NOTES_WHISPER_DECODER_PATH", "").strip()
+    settings = load_settings()
+    encoder_configured = os.environ.get("OFFLINE_NOTES_WHISPER_ENCODER_PATH", "").strip() or settings.whisper_encoder_path.strip()
+    decoder_configured = os.environ.get("OFFLINE_NOTES_WHISPER_DECODER_PATH", "").strip() or settings.whisper_decoder_path.strip()
     if encoder_configured and decoder_configured:
         encoder = Path(encoder_configured)
         decoder = Path(decoder_configured)
@@ -105,7 +109,8 @@ def find_whisper_model_paths(app_dir: Path | None = None) -> tuple[Path | None, 
 
 
 def find_whisper_python(app_dir: Path | None = None) -> Path | None:
-    configured = os.environ.get("OFFLINE_NOTES_WHISPER_PYTHON", "").strip()
+    settings = load_settings()
+    configured = os.environ.get("OFFLINE_NOTES_WHISPER_PYTHON", "").strip() or settings.whisper_python_path.strip()
     candidates = [Path(configured)] if configured else []
     candidates.append(Path.cwd() / "external" / "aihub-whisper-venv311" / "Scripts" / "python.exe")
     if app_dir:
@@ -121,7 +126,8 @@ def find_whisper_python(app_dir: Path | None = None) -> Path | None:
 
 
 def find_qairt_home() -> Path | None:
-    configured = os.environ.get("QAIRT_HOME", "").strip()
+    settings = load_settings()
+    configured = os.environ.get("QAIRT_HOME", "").strip() or settings.qairt_home.strip()
     candidates = [Path(configured)] if configured else []
     candidates.extend(
         [
@@ -152,7 +158,8 @@ def find_qairt_home() -> Path | None:
 
 
 def find_qwen3_genie_config() -> Path | None:
-    configured = os.environ.get("OFFLINE_NOTES_QWEN3_GENIE_CONFIG", "").strip()
+    settings = load_settings()
+    configured = os.environ.get("OFFLINE_NOTES_QWEN3_GENIE_CONFIG", "").strip() or settings.qwen3_genie_config.strip()
     candidates = [Path(configured)] if configured else []
     candidates.extend(
         [
