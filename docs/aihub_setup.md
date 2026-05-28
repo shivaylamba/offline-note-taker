@@ -69,6 +69,14 @@ $env:ADSP_LIBRARY_PATH = "$env:QAIRT_HOME\lib\hexagon-v73\unsigned"
 
 If local Genie execution fails after export, verify that the QAIRT version matches the generated bundle requirements.
 
+After installing Whisper, QAIRT, and Qwen3 assets, run the runtime doctor:
+
+```powershell
+offline-note-taker doctor
+```
+
+The doctor prints pass/warn/fail checks for Whisper, QAIRT, Genie, Qwen bundle files, ADSP runtime path, and NPU device detection.
+
 This repo includes a helper that checks for the expected QAIRT 2.45 install and launches the installer if you have already downloaded it:
 
 ```powershell

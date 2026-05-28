@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import threading
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
@@ -81,10 +82,11 @@ class MeetingPipeline:
         self,
         prepared: PreparedTranscript,
         on_text: Callable[[str], None] | None = None,
+        cancel_event: threading.Event | None = None,
     ) -> MeetingNotes:
         notes_runner = self.notes_runner or self._default_notes_runner()
         payload = MeetingNotesInput(chunks=prepared.chunks, segments=prepared.transcription.segments)
-        return notes_runner.generate_stream(payload, on_text)
+        return notes_runner.generate_stream(payload, on_text, cancel_event)
 
     def _runner_for(self, settings: PipelineSettings, audio: AudioMetadata) -> WhisperRunner:
         if settings.whisper_backend == "auto":

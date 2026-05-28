@@ -32,6 +32,7 @@ dev = [
 
 [project.scripts]
 offline-meeting-notes = "offline_meeting_notes.__main__:main"
+offline-note-taker = "offline_meeting_notes.__main__:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]

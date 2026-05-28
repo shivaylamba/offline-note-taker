@@ -1,20 +1,24 @@
 from __future__ import annotations
 
+import threading
 from pathlib import Path
 
 from .aihub_runtime import qualcomm_runtime_status
 from .audio import AudioError, AudioManager, WavRecorder
+from .diagnostics import DiagnosticsLogger
 from .exporters import ExportAgent
 from .models import AudioMetadata, MeetingSession
 from .pipeline import MeetingPipeline, PipelineSettings, PreparedTranscript
 from .qa import MeetingQAAgent
+from .runtime_doctor import run_runtime_doctor
 
 try:
     from PySide6.QtCore import QObject, QThread, Qt, Signal
-    from PySide6.QtGui import QAction, QFont, QTextCursor
+    from PySide6.QtGui import QAction, QFont
     from PySide6.QtWidgets import (
         QApplication,
         QFileDialog,
+        QGroupBox,
         QHBoxLayout,
         QLabel,
         QLineEdit,
@@ -44,13 +48,17 @@ class ProcessingWorker(QObject):
         super().__init__()
         self.pipeline = pipeline
         self.audio = audio
+        self.cancel_event = threading.Event()
+
+    def cancel(self) -> None:
+        self.cancel_event.set()
 
     def run(self) -> None:
         try:
             prepared = self.pipeline.prepare_transcript(self.audio, PipelineSettings())
             self.transcript_ready.emit(prepared)
             self.notes_started.emit()
-            notes = self.pipeline.generate_notes(prepared, self.notes_delta.emit)
+            notes = self.pipeline.generate_notes(prepared, self.notes_delta.emit, self.cancel_event)
             session = MeetingSession(
                 audio=self.audio,
                 transcription=prepared.transcription,
@@ -69,6 +77,7 @@ class MainWindow(QMainWindow):
         self.audio_manager = AudioManager()
         self.pipeline = MeetingPipeline(audio_manager=self.audio_manager)
         self.qa_agent = MeetingQAAgent()
+        self.diagnostics_logger = DiagnosticsLogger()
         self.recorder = WavRecorder()
         self.selected_audio: AudioMetadata | None = None
         self.session: MeetingSession | None = None
@@ -77,6 +86,7 @@ class MainWindow(QMainWindow):
         self.worker: ProcessingWorker | None = None
         self.notes_stream_active = False
         self.notes_stream_has_text = False
+        self.cancel_requested = False
 
         self.setWindowTitle("Offline Meeting Notes")
         self.resize(980, 760)
@@ -109,13 +119,35 @@ class MainWindow(QMainWindow):
         self.status_label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
         layout.addWidget(self.status_label)
 
+        badge_row = QHBoxLayout()
+        self.whisper_badge = QLabel("Whisper: not run")
+        self.notes_badge = QLabel("Notes: not run")
+        self.fallback_badge = QLabel("Fallback: none")
+        for badge in (self.whisper_badge, self.notes_badge, self.fallback_badge):
+            badge.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+            badge_row.addWidget(badge)
+        badge_row.addStretch(1)
+        layout.addLayout(badge_row)
+
         layout.addLayout(self._action_bar())
 
-        self.chat = QPlainTextEdit()
-        self.chat.setReadOnly(True)
-        self.chat.setPlaceholderText("Conversation")
-        self.chat.setLineWrapMode(QPlainTextEdit.LineWrapMode.WidgetWidth)
-        layout.addWidget(self.chat, stretch=1)
+        panels = QHBoxLayout()
+        left = QVBoxLayout()
+        right = QVBoxLayout()
+
+        self.transcript_text = self._read_only_text("Transcript will appear here after Whisper finishes.")
+        self.notes_text = self._read_only_text("Meeting notes will appear here after local LLM extraction.")
+        self.runtime_text = self._read_only_text(qualcomm_runtime_status().message())
+        self.runtime_text.setPlainText(qualcomm_runtime_status().message())
+        self.chat = self._read_only_text("Ask questions after notes are generated.")
+
+        left.addWidget(self._panel("Transcript", self.transcript_text), stretch=1)
+        left.addWidget(self._panel("Meeting Notes", self.notes_text), stretch=2)
+        right.addWidget(self._panel("Runtime Check", self.runtime_text), stretch=1)
+        right.addWidget(self._panel("Q&A", self.chat), stretch=1)
+        panels.addLayout(left, stretch=3)
+        panels.addLayout(right, stretch=2)
+        layout.addLayout(panels, stretch=1)
 
         layout.addLayout(self._composer())
 
@@ -125,6 +157,19 @@ class MainWindow(QMainWindow):
         quit_action = QAction("Quit", self)
         quit_action.triggered.connect(QApplication.instance().quit)
         self.addAction(quit_action)
+
+    def _read_only_text(self, placeholder: str) -> QPlainTextEdit:
+        widget = QPlainTextEdit()
+        widget.setReadOnly(True)
+        widget.setPlaceholderText(placeholder)
+        widget.setLineWrapMode(QPlainTextEdit.LineWrapMode.WidgetWidth)
+        return widget
+
+    def _panel(self, title: str, widget: QWidget) -> QGroupBox:
+        box = QGroupBox(title)
+        layout = QVBoxLayout(box)
+        layout.addWidget(widget)
+        return box
 
     def _action_bar(self) -> QHBoxLayout:
         row = QHBoxLayout()
@@ -142,8 +187,16 @@ class MainWindow(QMainWindow):
         self.upload_button.setIcon(style.standardIcon(QStyle.StandardPixmap.SP_DialogOpenButton))
         self.upload_button.clicked.connect(self._upload_audio)
 
+        self.runtime_button = QPushButton("Runtime Check")
+        self.runtime_button.setIcon(style.standardIcon(QStyle.StandardPixmap.SP_MessageBoxInformation))
+        self.runtime_button.clicked.connect(self._runtime_check)
+
         self.sample_button = QPushButton("Try Sample")
         self.sample_button.clicked.connect(self._try_sample)
+
+        self.cancel_button = QPushButton("Cancel Notes")
+        self.cancel_button.setIcon(style.standardIcon(QStyle.StandardPixmap.SP_BrowserStop))
+        self.cancel_button.clicked.connect(self._cancel_notes)
 
         self.export_button = QPushButton("Export")
         self.export_button.setIcon(style.standardIcon(QStyle.StandardPixmap.SP_DialogSaveButton))
@@ -152,7 +205,9 @@ class MainWindow(QMainWindow):
         row.addWidget(self.record_button)
         row.addWidget(self.stop_button)
         row.addWidget(self.upload_button)
+        row.addWidget(self.runtime_button)
         row.addWidget(self.sample_button)
+        row.addWidget(self.cancel_button)
         row.addStretch(1)
         row.addWidget(self.export_button)
         return row
@@ -221,6 +276,14 @@ class MainWindow(QMainWindow):
         self.selected_audio = audio
         self.session = None
         self.is_processing = True
+        self.cancel_requested = False
+        self.notes_stream_active = False
+        self.notes_stream_has_text = False
+        self.transcript_text.setPlainText("")
+        self.notes_text.setPlainText("Waiting for transcript...")
+        self.whisper_badge.setText("Whisper: running")
+        self.notes_badge.setText("Notes: waiting")
+        self.fallback_badge.setText("Fallback: none")
         self.status_label.setText(f"Processing {audio.path.name}")
         self._append("Assistant", "Transcribing and generating notes locally. Qwen/QNN notes can take a few minutes.")
         self._set_status("Processing locally")
@@ -247,6 +310,21 @@ class MainWindow(QMainWindow):
         self.worker = worker
         thread.start()
 
+    def _runtime_check(self) -> None:
+        report = run_runtime_doctor()
+        self.runtime_text.setPlainText(report.to_text())
+        self._set_status("Runtime ready" if report.ok else "Runtime check found missing pieces")
+        self._append("Assistant", "Runtime Check complete. See the Runtime Check panel.")
+
+    def _cancel_notes(self) -> None:
+        if not self.worker or not self.is_processing:
+            return
+        self.cancel_requested = True
+        self.worker.cancel()
+        self.cancel_button.setEnabled(False)
+        self._append_notes_status("Cancel requested. Waiting for Genie to stop cleanly.")
+        self._set_status("Cancelling notes generation")
+
     def _transcript_ready(self, prepared: object) -> None:
         if not isinstance(prepared, PreparedTranscript):
             return
@@ -254,6 +332,8 @@ class MainWindow(QMainWindow):
             f"Transcript ready: {self.selected_audio.path.name if self.selected_audio else 'audio'} | "
             f"backend: {prepared.transcription.backend} | generating notes"
         )
+        self.whisper_badge.setText(f"Whisper: {prepared.transcription.backend}")
+        self.notes_badge.setText("Notes: starting")
         self._set_status("Transcript ready; generating notes")
         warnings = (
             f"\n\nWarnings: {'; '.join(prepared.transcription.warnings)}"
@@ -268,11 +348,15 @@ class MainWindow(QMainWindow):
             f"{prepared.transcription.full_transcript}"
             f"{warnings}",
         )
+        self.transcript_text.setPlainText(prepared.transcription.full_transcript + warnings)
 
     def _notes_started(self) -> None:
         self.notes_stream_active = True
         self.notes_stream_has_text = False
+        self.notes_badge.setText("Notes: Qwen3 Genie running")
+        self.notes_text.setPlainText("Extracting structured notes with the local LLM.")
         self._append("Assistant", "Extracting structured notes with the local LLM.")
+        self._sync_actions()
 
     def _notes_delta(self, text: str) -> None:
         if not text:
@@ -280,27 +364,27 @@ class MainWindow(QMainWindow):
         if not self.notes_stream_active:
             self._notes_started()
         self.notes_stream_has_text = True
+        self._append_notes_status(text)
         self._append("Assistant", text)
 
     def _processing_finished(self, session: object) -> None:
         self.is_processing = False
         if isinstance(session, MeetingSession):
             self.session = session
+            log_path = self.diagnostics_logger.write(session)
             self.status_label.setText(
                 f"Ready: {session.audio.path.name} | transcript: {session.transcription.backend} | notes: {session.notes.backend}"
             )
-            if self.notes_stream_has_text:
-                self._append(
-                    "Assistant",
-                    "Final grounded notes:\n\n"
-                    f"{session.notes.to_markdown()}\n"
-                    "Exports and Q&A are ready.",
-                )
-            else:
-                self._append("Assistant", "Done. Here are the notes.\n\n" + session.notes.to_markdown())
+            self.notes_badge.setText(f"Notes: {session.notes.backend}")
+            self.fallback_badge.setText(
+                f"Fallback: {session.notes.fallback_reason}" if session.notes.fallback_reason else "Fallback: none"
+            )
+            self.notes_text.setPlainText(session.notes.to_markdown())
+            self._append("Assistant", f"Done. Exports and Q&A are ready.\n\nDiagnostics log: {log_path}")
             self._sync_actions()
         else:
             self.status_label.setText("Processing failed")
+            self.notes_text.setPlainText("Processing failed: unexpected local pipeline result.")
             self._append("Assistant", "The local AI pipeline returned an unexpected result.")
             self._sync_actions()
 
@@ -308,6 +392,8 @@ class MainWindow(QMainWindow):
         self.is_processing = False
         self.notes_stream_active = False
         self.status_label.setText("Processing failed")
+        self.notes_badge.setText("Notes: failed")
+        self.notes_text.setPlainText(message)
         self._append(
             "Assistant",
             "I captured the audio, but could not finish the local AI pipeline.\n\n"
@@ -325,6 +411,13 @@ class MainWindow(QMainWindow):
         self.session = session
         self.status_label.setText(
             f"Ready: {session.audio.path.name} | transcript: {session.transcription.backend} | notes: {session.notes.backend}"
+        )
+        self.transcript_text.setPlainText(session.transcription.full_transcript)
+        self.notes_text.setPlainText(session.notes.to_markdown())
+        self.whisper_badge.setText(f"Whisper: {session.transcription.backend}")
+        self.notes_badge.setText(f"Notes: {session.notes.backend}")
+        self.fallback_badge.setText(
+            f"Fallback: {session.notes.fallback_reason}" if session.notes.fallback_reason else "Fallback: none"
         )
         self._append("Assistant", self._format_result(session))
         self._sync_actions()
@@ -361,8 +454,9 @@ class MainWindow(QMainWindow):
         if not target:
             return
         exported = ExportAgent(target).export_all(self.session)
+        log_path = self.diagnostics_logger.write(self.session, exported)
         lines = "\n".join(f"- {kind}: {path}" for kind, path in exported.items())
-        self._append("Assistant", f"Exported files:\n{lines}")
+        self._append("Assistant", f"Exported files:\n{lines}\n- diagnostics: {log_path}")
         self._set_status(f"Exported to {target}")
 
     def _append(self, speaker: str, message: str) -> None:
@@ -372,10 +466,11 @@ class MainWindow(QMainWindow):
         scrollbar = self.chat.verticalScrollBar()
         scrollbar.setValue(scrollbar.maximum())
 
-    def _append_raw(self, text: str) -> None:
-        self.chat.moveCursor(QTextCursor.MoveOperation.End)
-        self.chat.insertPlainText(text)
-        scrollbar = self.chat.verticalScrollBar()
+    def _append_notes_status(self, text: str) -> None:
+        existing = self.notes_text.toPlainText().strip()
+        block = text.strip()
+        self.notes_text.setPlainText(f"{existing}\n\n{block}".strip())
+        scrollbar = self.notes_text.verticalScrollBar()
         scrollbar.setValue(scrollbar.maximum())
 
     def _sync_actions(self) -> None:
@@ -384,8 +479,10 @@ class MainWindow(QMainWindow):
         is_busy = self.is_processing
         self.record_button.setEnabled(not is_recording and not is_busy)
         self.upload_button.setEnabled(not is_recording and not is_busy)
+        self.runtime_button.setEnabled(not is_busy)
         self.sample_button.setEnabled(not is_recording and not is_busy)
         self.stop_button.setEnabled(is_recording and not is_busy)
+        self.cancel_button.setEnabled(is_busy and self.notes_stream_active and not self.cancel_requested)
         self.export_button.setEnabled(has_session and not is_busy)
         self.question_input.setEnabled(has_session and not is_busy)
         self.ask_button.setEnabled(has_session and not is_busy)

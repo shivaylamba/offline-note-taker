@@ -90,6 +90,7 @@ class MeetingNotesRunner:
         self,
         payload: MeetingNotesInput,
         on_text: Callable[[str], None] | None = None,
+        cancel_event: threading.Event | None = None,
     ) -> MeetingNotes:
         notes = self.generate(payload)
         if on_text:
@@ -358,7 +359,8 @@ class Qwen3GenieMeetingNotesRunner(MeetingNotesRunner):
                 + " Download the Qualcomm Qwen3-4B Snapdragon X Elite ready-made Genie bundle and set "
                 "OFFLINE_NOTES_QWEN3_GENIE_CONFIG plus QAIRT_HOME."
             )
-        return cls(genie_config=genie_config, qairt_home=qairt_home)  # type: ignore[arg-type]
+        timeout_seconds = int(os.environ.get("OFFLINE_NOTES_QWEN_TIMEOUT_SECONDS", "150"))
+        return cls(genie_config=genie_config, qairt_home=qairt_home, timeout_seconds=timeout_seconds)  # type: ignore[arg-type]
 
     def generate(self, payload: MeetingNotesInput) -> MeetingNotes:
         return self._generate(payload, on_text=None)
@@ -367,14 +369,17 @@ class Qwen3GenieMeetingNotesRunner(MeetingNotesRunner):
         self,
         payload: MeetingNotesInput,
         on_text: Callable[[str], None] | None = None,
+        cancel_event: threading.Event | None = None,
     ) -> MeetingNotes:
-        return self._generate(payload, on_text=on_text)
+        return self._generate(payload, on_text=on_text, cancel_event=cancel_event)
 
     def _generate(
         self,
         payload: MeetingNotesInput,
         on_text: Callable[[str], None] | None,
+        cancel_event: threading.Event | None = None,
     ) -> MeetingNotes:
+        started = time.monotonic()
         fallback = self.grounded_extractor.generate(payload)
         prompt = self._prompt(payload)
         with tempfile.NamedTemporaryFile("w", suffix=".txt", delete=False, encoding="utf-8") as handle:
@@ -388,22 +393,40 @@ class Qwen3GenieMeetingNotesRunner(MeetingNotesRunner):
                 "--prompt_file",
                 str(prompt_file),
             ]
-            stdout, returncode = self._run_streaming(command, on_text)
+            stdout, returncode, stop_reason = self._run_streaming(command, on_text, cancel_event)
         finally:
             prompt_file.unlink(missing_ok=True)
 
+        elapsed_ms = int((time.monotonic() - started) * 1000)
         if returncode != 0:
             error = stdout.strip()
             raise RuntimeError(error or "Qwen3 Genie runner failed.")
 
+        if stop_reason == "cancelled":
+            fallback.backend = f"{self.backend_name}_fallback_cancelled"
+            fallback.elapsed_ms = elapsed_ms
+            fallback.fallback_reason = "Qwen notes generation was cancelled by the user."
+            return fallback
+
         qwen_text = self._extract_output(stdout)
         if not qwen_text:
             fallback.backend = f"{self.backend_name}_fallback_empty"
+            fallback.elapsed_ms = elapsed_ms
+            fallback.fallback_reason = "Qwen returned no parseable notes before finishing or timing out."
             return fallback
 
-        return self._notes_from_llm_text(qwen_text, fallback)
+        notes = self._notes_from_llm_text(qwen_text, fallback)
+        notes.elapsed_ms = elapsed_ms
+        if stop_reason == "timeout" and not notes.fallback_reason:
+            notes.fallback_reason = "Qwen reached the configured timeout before producing complete notes."
+        return notes
 
-    def _run_streaming(self, command: list[str], on_text: Callable[[str], None] | None) -> tuple[str, int]:
+    def _run_streaming(
+        self,
+        command: list[str],
+        on_text: Callable[[str], None] | None,
+        cancel_event: threading.Event | None,
+    ) -> tuple[str, int, str]:
         process = subprocess.Popen(
             command,
             cwd=str(self.genie_config.parent),
@@ -431,6 +454,7 @@ class Qwen3GenieMeetingNotesRunner(MeetingNotesRunner):
         stdout_parts: list[str] = []
         completed_json = False
         timed_out = False
+        cancelled = False
         output_done = False
         started = time.monotonic()
         last_progress = started
@@ -460,6 +484,12 @@ class Qwen3GenieMeetingNotesRunner(MeetingNotesRunner):
             if output_done and process.poll() is not None:
                 break
             now = time.monotonic()
+            if cancel_event and cancel_event.is_set():
+                cancelled = True
+                if on_text:
+                    on_text("Cancelling notes generation and using local transcript-grounded fallback notes.")
+                process.terminate()
+                break
             if now - started >= self.timeout_seconds:
                 timed_out = True
                 if on_text:
@@ -471,7 +501,7 @@ class Qwen3GenieMeetingNotesRunner(MeetingNotesRunner):
                 on_text(f"Still extracting structured notes locally ({elapsed}s elapsed, NPU active).")
                 last_progress = now
 
-        if completed_json or timed_out:
+        if completed_json or timed_out or cancelled:
             try:
                 process.wait(timeout=5)
             except subprocess.TimeoutExpired:
@@ -481,11 +511,12 @@ class Qwen3GenieMeetingNotesRunner(MeetingNotesRunner):
         else:
             returncode = process.wait(timeout=5)
         stdout = "".join(stdout_parts)
-        if on_text and not completed_json and not timed_out:
+        if on_text and not completed_json and not timed_out and not cancelled:
             final_text = self._extract_output(stdout)
             if final_text:
                 on_text("Received local LLM output. Rendering final notes now.")
-        return stdout, returncode
+        stop_reason = "cancelled" if cancelled else "timeout" if timed_out else "complete" if completed_json else ""
+        return stdout, returncode, stop_reason
 
     def _has_complete_json(self, stdout: str) -> bool:
         text = self._extract_output(stdout)
@@ -555,6 +586,7 @@ class Qwen3GenieMeetingNotesRunner(MeetingNotesRunner):
             payload = self._json_payload(text)
         except ValueError:
             fallback.backend = f"{self.backend_name}_fallback_parse_failed"
+            fallback.fallback_reason = "Qwen returned output that could not be parsed as structured notes JSON."
             return fallback
 
         decisions = self._string_list(payload, "decisions", fallback.decisions)
@@ -576,6 +608,7 @@ class Qwen3GenieMeetingNotesRunner(MeetingNotesRunner):
         if not notes.action_items and fallback.action_items:
             notes.action_items = fallback.action_items
             notes.backend = f"{self.backend_name}_fallback_actions"
+            notes.fallback_reason = "Qwen returned no action items, so transcript-grounded fallback actions were used."
         return notes
 
     def _json_payload(self, text: str) -> dict[str, object]:

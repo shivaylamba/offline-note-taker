@@ -258,3 +258,4 @@ def test_qwen_genie_rejects_schema_placeholders() -> None:
 
     assert notes.summary == fallback.summary
     assert notes.action_items == fallback.action_items
+    assert notes.fallback_reason

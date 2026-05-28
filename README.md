@@ -69,6 +69,7 @@ Large runtime assets are intentionally ignored by Git:
 - `models/`
 - `recordings/`
 - `exports/`
+- `logs/`
 
 ## Repository Layout
 
@@ -113,6 +114,14 @@ From the repository root:
 python -m pip install -e ".[gui,dev]"
 ```
 
+If PowerShell does not recognize `offline-note-taker` after install, either use
+`python -m offline_meeting_notes ...` or add the Python user Scripts folder to
+`PATH`. On Windows ARM64 that is commonly:
+
+```powershell
+$env:Path += ";$env:APPDATA\Python\Python312-arm64\Scripts"
+```
+
 For tests only:
 
 ```powershell
@@ -121,22 +130,42 @@ python -m pip install -e ".[dev]"
 
 ## Run
 
+Recommended demo-beta flow:
+
+```powershell
+offline-note-taker doctor
+offline-note-taker smoke
+offline-note-taker
+```
+
 Launch the desktop app:
 
 ```powershell
 python -m offline_meeting_notes
 ```
 
+or, after installing the package:
+
+```powershell
+offline-note-taker
+```
+
+Check local Qualcomm runtime configuration:
+
+```powershell
+offline-note-taker doctor
+```
+
 Run a local CLI smoke test:
 
 ```powershell
-python -m offline_meeting_notes --cli-smoke
+offline-note-taker smoke
 ```
 
 Process one audio file from the command line:
 
 ```powershell
-python -m offline_meeting_notes --audio-file "C:\path\to\meeting.wav" --export-dir exports
+offline-note-taker process --audio "C:\path\to\meeting.wav" --export-dir exports
 ```
 
 ## Qualcomm Runtime Setup
@@ -239,6 +268,23 @@ The app follows a transcript-first UX:
 
 The app does not hardcode names such as `Simon`, `Jack`, or `Sam`. Those names only appear in tests as sample transcript content.
 
+## Runtime Check And Logs
+
+The demo beta includes a runtime doctor in both CLI and GUI form.
+
+The doctor validates:
+
+- Whisper Windows app and `demo.py`
+- Whisper Python environment
+- Whisper encoder/decoder ONNX files
+- QAIRT 2.45.x
+- `genie-t2t-run.exe`
+- Qwen3 Genie config and model parts
+- `ADSP_LIBRARY_PATH`
+- NPU device availability when Windows exposes it
+
+Run logs are stored locally under `logs/` and are ignored by Git. Logs include audio duration, Whisper backend/latency, Qwen backend/latency, fallback reason, and export paths. No telemetry is sent anywhere.
+
 ## Exports
 
 The export action writes:
@@ -293,6 +339,7 @@ If the transcript appears but notes take time:
 - Qwen3-4B is running through Genie on the NPU.
 - The app shows progress messages while extraction runs.
 - If Qwen takes too long, the app falls back to transcript-grounded notes.
+- Use `Cancel Notes` to stop a long notes run and render fallback notes.
 
 If Qwen does not run:
 
@@ -300,6 +347,8 @@ If Qwen does not run:
 - Confirm `ADSP_LIBRARY_PATH`.
 - Confirm `genie-t2t-run.exe` exists under QAIRT.
 - Confirm the Qwen3-4B Genie bundle matches QAIRT 2.45.x.
+
+For live demo preparation, use [docs/demo_checklist.md](docs/demo_checklist.md).
 
 ## License
 

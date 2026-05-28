@@ -91,6 +91,8 @@ class MeetingNotes:
     follow_up_email: str
     transcript_reference: list[str]
     backend: str
+    elapsed_ms: int = 0
+    fallback_reason: str = ""
 
     def to_markdown(self) -> str:
         decisions = self.decisions or ["not mentioned"]
@@ -141,6 +143,10 @@ class MeetingNotes:
                 self.backend,
             ]
         )
+        if self.elapsed_ms:
+            lines.extend(["", "## Notes Latency", f"{self.elapsed_ms} ms"])
+        if self.fallback_reason:
+            lines.extend(["", "## Fallback Reason", self.fallback_reason])
         return "\n".join(lines).strip() + "\n"
 
     def to_dict(self) -> dict[str, Any]:
@@ -154,6 +160,8 @@ class MeetingNotes:
             "follow_up_email": self.follow_up_email,
             "transcript_reference": list(self.transcript_reference),
             "backend": self.backend,
+            "elapsed_ms": self.elapsed_ms,
+            "fallback_reason": self.fallback_reason,
         }
 
 
